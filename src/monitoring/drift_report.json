@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-06-08T10:00:00",
+  "window_days": 30,
+  "results": {
+    "beras": {
+      "psi": 0.045,
+      "status": "STABIL",
+      "color": "green",
+      "reference_mean": 13500.0,
+      "current_mean": 13650.0,
+      "perubahan_pct": 1.11
+    },
+    "cabai_merah": {
+      "psi": 0.231,
+      "status": "DRIFT SIGNIFIKAN",
+      "color": "red",
+      "reference_mean": 38000.0,
+      "current_mean": 52000.0,
+      "perubahan_pct": 36.84
+    },
+    "daging_ayam": {
+      "psi": 0.112,
+      "status": "DRIFT RINGAN",
+      "color": "orange",
+      "reference_mean": 36000.0,
+      "current_mean": 37500.0,
+      "perubahan_pct": 4.17
+    }
+  }
+}

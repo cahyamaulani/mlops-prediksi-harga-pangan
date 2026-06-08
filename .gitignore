@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# Virtual Environment
+venv/
+env/
+.venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# MLflow — jangan commit, pakai remote storage
+mlruns/
+mlflow.db
+mlartifacts/
+
+# Model files — besar, pakai DVC
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+models/
+!models/.gitkeep
+
+# Data — pakai DVC
+data/raw/*.csv
+data/processed/*.csv
+data/raw/*.json
+data/processed/*.json
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# DVC
+.dvc/tmp
+.dvc/cache
+
+# Secrets
+.env
+.env.local
+*.env
+secrets/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs & generated metrics
+*.log
+logs/
+metrics.json
+model_metrics.json
+
+# Generated reports — output runtime
+data/processed/drift_report.json
+
+# MinIO binary
+minio
+minio.exe
+~/minio-data/

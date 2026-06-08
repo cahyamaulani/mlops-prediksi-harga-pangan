@@ -1,0 +1,33 @@
+# Core ML
+pandas==2.2.2
+numpy==1.26.4
+scikit-learn==1.4.2
+xgboost==2.0.3
+
+# MLOps
+mlflow==2.13.0
+dvc==3.59.0
+dvc-s3==3.2.0
+pathspec==0.12.1
+evidently==0.4.30
+
+# API
+fastapi==0.111.0
+uvicorn==0.29.0
+
+# Dashboard
+streamlit==1.35.0
+matplotlib==3.8.4
+seaborn==0.13.2
+
+# Data ingestion
+requests==2.32.2
+beautifulsoup4==4.12.3
+
+# Testing
+pytest==8.2.0
+
+# Utils
+python-dotenv==1.0.1
+cloudpickle==3.0.0
+
