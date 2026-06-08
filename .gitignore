@@ -28,6 +28,8 @@ mlartifacts/
 *.pth
 models/
 !models/.gitkeep
+!models/model_metadata.json
+!models/model_metadata.json.dvc
 
 # Data — pakai DVC
 data/raw/*.csv
@@ -36,6 +38,8 @@ data/raw/*.json
 data/processed/*.json
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+data/features/*.csv
+!data/features/.gitkeep
 
 # DVC
 .dvc/tmp
