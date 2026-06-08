@@ -1,0 +1,13 @@
+{
+  "komoditas": "telur_ayam",
+  "best_model": "RandomForest",
+  "metrics": {
+    "mape": 0.016362,
+    "rmse": 583.53,
+    "mae": 433.74,
+    "mape_pct": 1.6362
+  },
+  "sliding_window_days": 365,
+  "target": "target_1d",
+  "trained_at": "2026-06-08T08:00:21.834731"
+}

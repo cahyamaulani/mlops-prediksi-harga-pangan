@@ -21,15 +21,15 @@ mlflow.db
 mlartifacts/
 
 # Model files — besar, pakai DVC
-*.pkl
-*.joblib
-*.h5
-*.pt
-*.pth
-models/
+models/*.pkl
+models/*.joblib
+models/*.h5
+models/*.pt
+models/*.pth
 !models/.gitkeep
 !models/model_metadata.json
 !models/model_metadata.json.dvc
+!models/best_model_*.json
 
 # Data — pakai DVC
 data/raw/*.csv
@@ -68,4 +68,3 @@ data/processed/drift_report.json
 minio
 minio.exe
 ~/minio-data/
-/models

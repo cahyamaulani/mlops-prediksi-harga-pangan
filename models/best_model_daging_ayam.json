@@ -1,0 +1,13 @@
+{
+  "komoditas": "daging_ayam",
+  "best_model": "RandomForest",
+  "metrics": {
+    "mape": 0.016488,
+    "rmse": 734.58,
+    "mae": 592.61,
+    "mape_pct": 1.6488
+  },
+  "sliding_window_days": 365,
+  "target": "target_1d",
+  "trained_at": "2026-06-08T08:00:50.636277"
+}
