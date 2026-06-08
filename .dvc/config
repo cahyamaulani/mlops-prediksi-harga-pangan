@@ -1,7 +1,9 @@
 [core]
-    remote = myminio
+    remote = dagshub
 ['remote "myminio"']
     url = s3://projekmlops-dvc
     endpointurl = http://127.0.0.1:9000
     access_key_id = minioadmin
     secret_access_key = minioadmin
+['remote "dagshub"']
+    url = https://dagshub.com/cahyamaulani/mlops-prediksi-harga-pangan.dvc
