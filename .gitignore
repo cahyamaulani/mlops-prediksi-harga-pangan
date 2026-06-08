@@ -68,3 +68,4 @@ data/processed/drift_report.json
 minio
 minio.exe
 ~/minio-data/
+/models
