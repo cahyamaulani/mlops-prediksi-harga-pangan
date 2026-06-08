@@ -30,4 +30,5 @@ pytest==8.2.0
 # Utils
 python-dotenv==1.0.1
 cloudpickle==3.0.0
+setuptools>=68.0.0
 
