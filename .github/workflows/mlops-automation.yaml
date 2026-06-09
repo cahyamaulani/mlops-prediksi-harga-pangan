@@ -10,6 +10,8 @@ env:
   MLFLOW_TRACKING_URI: https://dagshub.com/cahyamaulani/mlops-prediksi-harga-pangan.mlflow
   MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
   MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+  DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+  DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
 
 jobs:
   # ============================================================
