@@ -38,9 +38,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: mlops-api
     ports:
-      - "8000:8000"
+      - "8000-8002:8000"
     environment:
       - MLFLOW_TRACKING_URI=https://dagshub.com/cahyamaulani/mlops-prediksi-harga-pangan.mlflow
       - MLFLOW_TRACKING_USERNAME=${MLFLOW_TRACKING_USERNAME}
@@ -55,6 +54,8 @@ services:
     depends_on:
       - mlflow-server
     restart: unless-stopped
+    deploy:
+      replicas: 3
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
