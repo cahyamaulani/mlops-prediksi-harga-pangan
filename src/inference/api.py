@@ -6,6 +6,30 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
 
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from fastapi.responses import Response
+import time
+
+# Metrics
+REQUEST_COUNT = Counter(
+    "api_request_total",
+    "Total jumlah request",
+    ["endpoint", "komoditas", "status"]
+)
+
+REQUEST_LATENCY = Histogram(
+    "api_request_latency_seconds",
+    "Latensi request dalam detik",
+    ["endpoint", "komoditas"]
+)
+
+PREDICTION_VALUE = Histogram(
+    "api_prediction_value",
+    "Nilai prediksi harga",
+    ["komoditas", "target"],
+    buckets=[10000, 15000, 20000, 25000, 30000, 35000, 40000, 50000]
+)
+
 # ==============================
 # SETUP
 # ==============================
@@ -111,10 +135,20 @@ def health():
         "timestamp": datetime.now().isoformat()
     }
 
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 @app.get("/predict/{komoditas}")
 def predict(komoditas: str):
+    start_time = time.time()
+
     if komoditas not in KOMODITAS_LIST:
+        REQUEST_COUNT.labels(
+            endpoint="predict",
+            komoditas=komoditas,
+            status="error"
+        ).inc()
         raise HTTPException(
             status_code=400,
             detail=f"Komoditas tidak valid. Pilih dari: {KOMODITAS_LIST}"
@@ -125,16 +159,20 @@ def predict(komoditas: str):
     harga_sekarang = float(df["harga"].iloc[-1])
     tanggal_terakhir = str(df["tanggal"].iloc[-1].date())
 
-    # Prediksi besok (1d)
     model_1d = load_model(komoditas, "1d")
     prediksi_besok = float(model_1d.predict(sample)[0])
 
-    # Prediksi 7 hari (7d)
     model_7d = load_model(komoditas, "7d")
     prediksi_7d = float(model_7d.predict(sample)[0])
 
-    # Early warning
     alert, perubahan_pct = detect_alert(harga_sekarang, prediksi_7d)
+
+    # Log metrics ke Prometheus
+    latency = time.time() - start_time
+    REQUEST_LATENCY.labels(endpoint="predict", komoditas=komoditas).observe(latency)
+    REQUEST_COUNT.labels(endpoint="predict", komoditas=komoditas, status="success").inc()
+    PREDICTION_VALUE.labels(komoditas=komoditas, target="1d").observe(prediksi_besok)
+    PREDICTION_VALUE.labels(komoditas=komoditas, target="7d").observe(prediksi_7d)
 
     return {
         "komoditas": komoditas,

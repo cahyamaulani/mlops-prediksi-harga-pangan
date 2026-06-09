@@ -10,3 +10,4 @@ requests==2.32.2
 python-dotenv==1.0.1
 cloudpickle==3.0.0
 setuptools>=68.0.0
+prometheus-client==0.20.0

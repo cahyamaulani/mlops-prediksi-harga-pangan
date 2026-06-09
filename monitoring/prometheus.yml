@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "mlops-api"
+    static_configs:
+      - targets:
+          - "mlops-prediksi-harga-pangan-api-service-1:8000"
+          - "mlops-prediksi-harga-pangan-api-service-2:8000"
+          - "mlops-prediksi-harga-pangan-api-service-3:8000"
+    metrics_path: /metrics
