@@ -19,7 +19,7 @@ def load_raw():
 
 def preprocess(df):
     # Pastikan kolom tanggal datetime
-    df["tanggal"] = pd.to_datetime(df["tanggal"])
+    df["tanggal"] = pd.to_datetime(df["tanggal"], format='mixed')
 
     # Pilih kolom yang relevan
     df = df[["tanggal", "commodity_name", "Provinsi", "Nilai"]].copy()

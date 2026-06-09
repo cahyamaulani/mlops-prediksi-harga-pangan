@@ -1,0 +1,131 @@
+name: Continuous Training Pipeline
+
+on:
+  # Skenario C: Schedule setiap Minggu jam 00:00 WIB (17:00 UTC)
+  schedule:
+    - cron: "0 17 * * 0"
+
+  # Manual trigger untuk testing
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Alasan retraining manual"
+        required: false
+        default: "Manual trigger"
+
+env:
+  MLFLOW_TRACKING_URI: https://dagshub.com/cahyamaulani/mlops-prediksi-harga-pangan.mlflow
+  MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+  MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+  DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+  DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+
+jobs:
+  # ============================================================
+  # JOB 1: CEK TRIGGER
+  # ============================================================
+  check-triggers:
+    name: "Check CT Triggers"
+    runs-on: ubuntu-latest
+
+    outputs:
+      should_retrain: ${{ steps.check.outputs.should_retrain }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Pull data dari DVC
+        run: |
+          dvc remote modify dagshub --local auth basic
+          dvc remote modify dagshub --local user $DAGSHUB_USERNAME
+          dvc remote modify dagshub --local password $DAGSHUB_TOKEN
+          dvc pull --remote dagshub --force
+
+      - name: Run preprocessing untuk drift detection
+        run: |
+          python src/data/preprocess.py
+          python src/monitoring/drift_detection.py
+
+      - name: Check triggers
+        id: check
+        run: |
+          python scripts/check_triggers.py
+          echo "should_retrain=$?" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+  # ============================================================
+  # JOB 2: RETRAINING (hanya kalau trigger aktif)
+  # ============================================================
+  retrain:
+    name: "Continuous Training"
+    runs-on: ubuntu-latest
+    needs: check-triggers
+    if: needs.check-triggers.outputs.should_retrain == '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Pull data terbaru dari DVC
+        run: |
+          dvc remote modify dagshub --local auth basic
+          dvc remote modify dagshub --local user $DAGSHUB_USERNAME
+          dvc remote modify dagshub --local password $DAGSHUB_TOKEN
+          dvc pull --remote dagshub --force
+
+      - name: Preprocessing & Feature Engineering
+        run: |
+          python src/data/preprocess.py
+          python src/features/feature_engineering.py
+
+      - name: Retraining model
+        run: python src/models/train.py
+
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrained-models
+          path: models/
+
+  # ============================================================
+  # JOB 3: EVALUASI & PROMOTE
+  # ============================================================
+  evaluate-and-promote:
+    name: "Evaluate & Promote"
+    runs-on: ubuntu-latest
+    needs: retrain
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download model artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: retrained-models
+          path: models/
+
+      - name: Compare & Promote model
+        run: python scripts/compare_models.py
