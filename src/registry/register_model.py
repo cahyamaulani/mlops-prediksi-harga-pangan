@@ -1,90 +1,119 @@
 import os
+import json
 import mlflow
+import dagshub
 from mlflow.tracking import MlflowClient
 
 # ==============================
-# CONFIG
+# SETUP MLFLOW → DAGSHUB
 # ==============================
 
-BASE_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..")
+dagshub.init(
+    repo_owner="cahyamaulani",
+    repo_name="mlops-prediksi-harga-pangan",
+    mlflow=True
 )
 
-mlflow.set_tracking_uri(f"sqlite:///{BASE_DIR}/mlflow.db")
-
-EXPERIMENT_NAME = "Prediksi Harga Pangan"
-
-BEST_MODELS = {
-    "beras": "RandomForest_v1_beras",
-    "telur_ayam": "RandomForest_v1_telur_ayam",
-    "daging_ayam": "RandomForest_v1_daging_ayam",
+KOMODITAS_LIST = ["beras", "telur_ayam", "daging_ayam"]
+TARGETS = {
+    "1d": "Prediksi Harga Pangan - target_1d",
+    "7d": "Prediksi Harga Pangan - target_7d",
 }
 
-# ==============================
-# REGISTER MODEL
-# ==============================
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+MODELS_DIR = os.path.join(BASE_DIR, "models")
+
+
+def load_best_model_info(komoditas, suffix):
+    path = os.path.join(MODELS_DIR, f"best_model_{komoditas}_{suffix}.json")
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"File tidak ditemukan: {path}")
+    with open(path) as f:
+        return json.load(f)
+
 
 def register_best_models():
     client = MlflowClient()
-    experiment = client.get_experiment_by_name(EXPERIMENT_NAME)
 
-    if experiment is None:
-        raise Exception(f"Experiment '{EXPERIMENT_NAME}' tidak ditemukan!")
+    for komoditas in KOMODITAS_LIST:
+        print(f"\n[ {komoditas.upper()} ]")
 
-    for komoditas, run_name in BEST_MODELS.items():
-        print(f"\nRegistering model untuk: {komoditas}")
+        for suffix, experiment_name in TARGETS.items():
+            label = "Prediksi Besok" if suffix == "1d" else "Deteksi Lonjakan 7 Hari"
+            print(f"  --- {label} ---")
 
-        # Cari run berdasarkan nama
-        runs = client.search_runs(
-            experiment_ids=[experiment.experiment_id],
-            filter_string=f"tags.mlflow.runName = '{run_name}'",
-            max_results=1
-        )
+            try:
+                info = load_best_model_info(komoditas, suffix)
+            except FileNotFoundError as e:
+                print(f"  ❌ {e}")
+                continue
 
-        if not runs:
-            print(f"  Run '{run_name}' tidak ditemukan, skip.")
-            continue
+            model_type = info["best_model"]
+            target = info["target"]
 
-        run = runs[0]
-        run_id = run.info.run_id
-        mape = run.data.metrics.get("mape_pct", 0)
-        rmse = run.data.metrics.get("rmse", 0)
+            # Cari experiment
+            experiment = client.get_experiment_by_name(experiment_name)
+            if experiment is None:
+                print(f"  ❌ Experiment '{experiment_name}' tidak ditemukan, skip.")
+                continue
 
-        # Register ke Model Registry
-        model_name = f"harga-pangan-{komoditas}"
-        model_uri = f"runs:/{run_id}/model"
+            # Cari run terbaik
+            runs = client.search_runs(
+                experiment_ids=[experiment.experiment_id],
+                filter_string=(
+                    f"params.model_type = '{model_type}' "
+                    f"AND params.komoditas = '{komoditas}' "
+                    f"AND params.target = '{target}'"
+                ),
+                order_by=["metrics.mape ASC"],
+                max_results=1
+            )
 
-        registered = mlflow.register_model(
-            model_uri=model_uri,
-            name=model_name
-        )
+            if not runs:
+                print(f"  ❌ Run tidak ditemukan, skip.")
+                continue
 
-        # Tambah deskripsi
-        client.update_registered_model(
-            name=model_name,
-            description=f"Model RandomForest untuk prediksi harga {komoditas} di Jawa Timur"
-        )
+            run = runs[0]
+            run_id = run.info.run_id
+            mape = run.data.metrics.get("mape_pct", 0)
+            rmse = run.data.metrics.get("rmse", 0)
 
-        # Tag versi model
-        client.set_model_version_tag(
-            name=model_name,
-            version=registered.version,
-            key="mape_pct",
-            value=str(round(mape, 4))
-        )
-        client.set_model_version_tag(
-            name=model_name,
-            version=registered.version,
-            key="rmse",
-            value=str(round(rmse, 2))
-        )
+            # Nama model: harga-pangan-beras-1d / harga-pangan-beras-7d
+            model_name = f"harga-pangan-{komoditas}-{suffix}"
+            model_uri = f"runs:/{run_id}/model"
 
-        print(f"  ✅ Registered: {model_name} v{registered.version}")
-        print(f"  MAPE: {mape:.2f}% | RMSE: {rmse:.2f}")
+            registered = mlflow.register_model(
+                model_uri=model_uri,
+                name=model_name
+            )
 
-    print("\nSemua model berhasil diregistrasi!")
-    print("Buka MLflow UI untuk melihat Model Registry:")
-    print("mlflow ui --host 0.0.0.0 --port 5000")
+            # Set ke Staging
+            client.transition_model_version_stage(
+                name=model_name,
+                version=registered.version,
+                stage="Staging",
+                archive_existing_versions=True
+            )
+
+            # Deskripsi dan tag
+            client.update_registered_model(
+                name=model_name,
+                description=f"Model {model_type} untuk {label} harga {komoditas} di Jawa Timur"
+            )
+            client.set_model_version_tag(name=model_name, version=registered.version,
+                                         key="mape_pct", value=str(round(mape, 4)))
+            client.set_model_version_tag(name=model_name, version=registered.version,
+                                         key="rmse", value=str(round(rmse, 2)))
+            client.set_model_version_tag(name=model_name, version=registered.version,
+                                         key="auto_registered", value="true")
+
+            print(f"  ✅ Registered: {model_name} v{registered.version} → Staging")
+            print(f"  Model : {model_type} | MAPE: {mape:.4f}% | RMSE: {rmse:.2f}")
+
+    print("\n" + "="*60)
+    print("Model registry selesai!")
+    print("Lihat di: https://dagshub.com/cahyamaulani/mlops-prediksi-harga-pangan/models")
+    print("="*60)
 
 
 if __name__ == "__main__":

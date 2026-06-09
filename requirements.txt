@@ -10,6 +10,8 @@ dvc==3.59.0
 dvc-s3==3.2.0
 pathspec==0.12.1
 evidently==0.4.30
+dagshub==0.3.25
+
 
 # API
 fastapi==0.111.0

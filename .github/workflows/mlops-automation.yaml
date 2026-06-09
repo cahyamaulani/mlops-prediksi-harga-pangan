@@ -1,0 +1,157 @@
+name: MLOps Automation Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  MLFLOW_TRACKING_URI: https://dagshub.com/cahyamaulani/mlops-prediksi-harga-pangan.mlflow
+  MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+  MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+
+jobs:
+  # ============================================================
+  # JOB 1: AUTOMATED TESTING
+  # ============================================================
+  test:
+    name: "Stage 1 - Automated Testing"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: pytest tests/ -v --tb=short
+
+  # ============================================================
+  # JOB 2: AUTOMATED TRAINING
+  # ============================================================
+  train:
+    name: "Stage 2 - Automated Training"
+    runs-on: ubuntu-latest
+    needs: test  # hanya jalan kalau test lulus
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Pull data dari DVC (DagsHub)
+        env:
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          dvc remote modify dagshub --local auth basic
+          dvc remote modify dagshub --local user $DAGSHUB_USERNAME
+          dvc remote modify dagshub --local password $DAGSHUB_TOKEN
+          dvc pull --remote dagshub
+
+      - name: Run preprocessing
+        run: python src/data/preprocess.py
+
+      - name: Run feature engineering
+        run: python src/features/feature_engineering.py
+
+      - name: Run training
+        run: python src/models/train.py
+
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-results
+          path: models/
+
+  # ============================================================
+  # JOB 3: MODEL EVALUATION & VALIDATION
+  # ============================================================
+  evaluate:
+    name: "Stage 3 - Model Evaluation & Validation"
+    runs-on: ubuntu-latest
+    needs: train
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download model artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: model-results
+          path: models/
+
+      - name: Run evaluation & validation
+        run: python scripts/evaluate_and_validate.py
+
+  # ============================================================
+  # JOB 4: AUTO REGISTRY UPDATE (hanya kalau evaluasi lulus)
+  # ============================================================
+  register:
+    name: "Stage 4 - Auto Registry Update"
+    runs-on: ubuntu-latest
+    needs: evaluate
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download model artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: model-results
+          path: models/
+
+      - name: Pull data dari DVC (DagsHub)
+        env:
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          dvc remote modify dagshub --local auth basic
+          dvc remote modify dagshub --local user $DAGSHUB_USERNAME
+          dvc remote modify dagshub --local password $DAGSHUB_TOKEN
+          dvc pull --remote dagshub
+
+      - name: Run preprocessing & feature engineering
+        run: |
+          python src/data/preprocess.py
+          python src/features/feature_engineering.py
+
+      - name: Register model ke MLflow (Staging)
+        run: python src/registry/register_model.py

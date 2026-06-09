@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import mlflow
 import mlflow.sklearn
+import dagshub
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_percentage_error, mean_squared_error
@@ -13,7 +14,7 @@ from xgboost import XGBRegressor
 # CONFIG
 # ==============================
 
-SLIDING_WINDOW_DAYS = 365  # 12 bulan terakhir
+SLIDING_WINDOW_DAYS = 365
 
 FEATURES = [
     "lag_1", "lag_7", "lag_14",
@@ -29,35 +30,46 @@ KOMODITAS_LIST = {
     "daging_ayam": "features_daging_ayam.csv",
 }
 
-# Target yang diprediksi: ganti ke "target_7d" untuk prediksi 7 hari
-TARGET = "target_1d"
+# 2 target: prediksi besok + deteksi lonjakan 7 hari
+TARGETS = {
+    "target_1d": "Prediksi Harga Besok",
+    "target_7d": "Deteksi Lonjakan 7 Hari",
+}
+
+# Threshold alert lonjakan (%)
+ALERT_THRESHOLD_PCT = 10.0
+
+# ==============================
+# SETUP MLFLOW → DAGSHUB
+# ==============================
+
+def setup_mlflow():
+    dagshub.init(
+        repo_owner="cahyamaulani",
+        repo_name="mlops-prediksi-harga-pangan",
+        mlflow=True
+    )
+
 
 # ==============================
 # LOAD DATA
 # ==============================
 
 def load_data(filename, target):
-    base_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..")
-    )
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     path = os.path.join(base_dir, "data", "features", filename)
     df = pd.read_csv(path)
     df["tanggal"] = pd.to_datetime(df["tanggal"])
     df = df.sort_values("tanggal").reset_index(drop=True)
 
-    # Terapkan sliding window
     cutoff = df["tanggal"].max() - pd.Timedelta(days=SLIDING_WINDOW_DAYS)
     df = df[df["tanggal"] >= cutoff]
 
     X = df[FEATURES]
     y = df[target]
 
-    # Split 80% train, 20% test (time-based, tidak random)
     split = int(len(df) * 0.8)
-    X_train, X_test = X.iloc[:split], X.iloc[split:]
-    y_train, y_test = y.iloc[:split], y.iloc[split:]
-
-    return X_train, X_test, y_train, y_test
+    return X.iloc[:split], X.iloc[split:], y.iloc[:split], y.iloc[split:]
 
 
 # ==============================
@@ -81,137 +93,94 @@ def evaluate(model, X_test, y_test):
 # TRAINING PER MODEL
 # ==============================
 
-def train_linear_regression(X_train, X_test, y_train, y_test, komoditas):
-    params = {"fit_intercept": True}
+def train_all_models(X_train, X_test, y_train, y_test, komoditas, target):
+    results = {}
 
-    with mlflow.start_run(run_name=f"LinearRegression_{komoditas}"):
-        model = LinearRegression(**params)
+    # Linear Regression
+    with mlflow.start_run(run_name=f"LinearRegression_{komoditas}_{target}"):
+        model = LinearRegression()
         model.fit(X_train, y_train)
         metrics = evaluate(model, X_test, y_test)
-
-        # Log ke MLflow
-        mlflow.log_param("model_type", "LinearRegression")
-        mlflow.log_param("komoditas", komoditas)
-        mlflow.log_param("sliding_window_days", SLIDING_WINDOW_DAYS)
-        mlflow.log_param("target", TARGET)
-        for k, v in params.items():
-            mlflow.log_param(k, v)
-        for k, v in metrics.items():
-            mlflow.log_metric(k, v)
-
+        mlflow.log_params({"model_type": "LinearRegression", "komoditas": komoditas,
+                           "target": target, "sliding_window_days": SLIDING_WINDOW_DAYS})
+        mlflow.log_metrics(metrics)
         mlflow.sklearn.log_model(model, "model")
+        results["LinearRegression"] = (model, metrics)
+        print(f"  LinearRegression    | MAPE: {metrics['mape_pct']:.2f}% | RMSE: {metrics['rmse']}")
 
-        print(f"  LinearRegression | MAPE: {metrics['mape_pct']:.2f}% | RMSE: {metrics['rmse']}")
-        return model, metrics
-
-
-def train_random_forest(X_train, X_test, y_train, y_test, komoditas):
-    # 3 variasi hyperparameter
-    variants = [
+    # Random Forest
+    rf_variants = [
         {"n_estimators": 100, "max_depth": 5, "min_samples_split": 2},
         {"n_estimators": 200, "max_depth": 8, "min_samples_split": 5},
         {"n_estimators": 300, "max_depth": 10, "min_samples_split": 3},
     ]
-
-    best_model, best_metrics = None, {"mape": float("inf")}
-
-    for i, params in enumerate(variants):
-        with mlflow.start_run(run_name=f"RandomForest_v{i+1}_{komoditas}"):
+    best_rf, best_rf_metrics = None, {"mape": float("inf")}
+    for i, params in enumerate(rf_variants):
+        with mlflow.start_run(run_name=f"RandomForest_v{i+1}_{komoditas}_{target}"):
             model = RandomForestRegressor(**params, random_state=42, n_jobs=-1)
             model.fit(X_train, y_train)
             metrics = evaluate(model, X_test, y_test)
-
-            mlflow.log_param("model_type", "RandomForest")
-            mlflow.log_param("komoditas", komoditas)
-            mlflow.log_param("sliding_window_days", SLIDING_WINDOW_DAYS)
-            mlflow.log_param("target", TARGET)
-            for k, v in params.items():
-                mlflow.log_param(k, v)
-            for k, v in metrics.items():
-                mlflow.log_metric(k, v)
-
+            mlflow.log_params({"model_type": "RandomForest", "komoditas": komoditas,
+                               "target": target, "sliding_window_days": SLIDING_WINDOW_DAYS, **params})
+            mlflow.log_metrics(metrics)
             mlflow.sklearn.log_model(model, "model")
+            print(f"  RandomForest v{i+1}    | MAPE: {metrics['mape_pct']:.2f}% | RMSE: {metrics['rmse']}")
+            if metrics["mape"] < best_rf_metrics["mape"]:
+                best_rf, best_rf_metrics = model, metrics
+    results["RandomForest"] = (best_rf, best_rf_metrics)
 
-            print(f"  RandomForest v{i+1} | MAPE: {metrics['mape_pct']:.2f}% | RMSE: {metrics['rmse']}")
-
-            if metrics["mape"] < best_metrics["mape"]:
-                best_model, best_metrics = model, metrics
-
-    return best_model, best_metrics
-
-
-def train_xgboost(X_train, X_test, y_train, y_test, komoditas):
-    # 3 variasi hyperparameter
-    variants = [
-        {
-            "n_estimators": 100, "max_depth": 3,
-            "learning_rate": 0.1, "subsample": 0.8,
-            "colsample_bytree": 0.8, "min_child_weight": 3
-        },
-        {
-            "n_estimators": 250, "max_depth": 4,
-            "learning_rate": 0.08, "subsample": 0.7,
-            "colsample_bytree": 0.7, "min_child_weight": 5
-        },
-        {
-            "n_estimators": 400, "max_depth": 5,
-            "learning_rate": 0.05, "subsample": 0.6,
-            "colsample_bytree": 0.6, "min_child_weight": 7
-        },
+    # XGBoost
+    xgb_variants = [
+        {"n_estimators": 100, "max_depth": 3, "learning_rate": 0.1,
+         "subsample": 0.8, "colsample_bytree": 0.8, "min_child_weight": 3},
+        {"n_estimators": 250, "max_depth": 4, "learning_rate": 0.08,
+         "subsample": 0.7, "colsample_bytree": 0.7, "min_child_weight": 5},
+        {"n_estimators": 400, "max_depth": 5, "learning_rate": 0.05,
+         "subsample": 0.6, "colsample_bytree": 0.6, "min_child_weight": 7},
     ]
-
-    best_model, best_metrics = None, {"mape": float("inf")}
-
-    for i, params in enumerate(variants):
-        with mlflow.start_run(run_name=f"XGBoost_v{i+1}_{komoditas}"):
+    best_xgb, best_xgb_metrics = None, {"mape": float("inf")}
+    for i, params in enumerate(xgb_variants):
+        with mlflow.start_run(run_name=f"XGBoost_v{i+1}_{komoditas}_{target}"):
             model = XGBRegressor(**params, random_state=42)
             model.fit(X_train, y_train)
             metrics = evaluate(model, X_test, y_test)
-
-            mlflow.log_param("model_type", "XGBoost")
-            mlflow.log_param("komoditas", komoditas)
-            mlflow.log_param("sliding_window_days", SLIDING_WINDOW_DAYS)
-            mlflow.log_param("target", TARGET)
-            for k, v in params.items():
-                mlflow.log_param(k, v)
-            for k, v in metrics.items():
-                mlflow.log_metric(k, v)
-
+            mlflow.log_params({"model_type": "XGBoost", "komoditas": komoditas,
+                               "target": target, "sliding_window_days": SLIDING_WINDOW_DAYS, **params})
+            mlflow.log_metrics(metrics)
             mlflow.sklearn.log_model(model, "model")
+            print(f"  XGBoost v{i+1}         | MAPE: {metrics['mape_pct']:.2f}% | RMSE: {metrics['rmse']}")
+            if metrics["mape"] < best_xgb_metrics["mape"]:
+                best_xgb, best_xgb_metrics = model, metrics
+    results["XGBoost"] = (best_xgb, best_xgb_metrics)
 
-            print(f"  XGBoost v{i+1}     | MAPE: {metrics['mape_pct']:.2f}% | RMSE: {metrics['rmse']}")
-
-            if metrics["mape"] < best_metrics["mape"]:
-                best_model, best_metrics = model, metrics
-
-    return best_model, best_metrics
+    return results
 
 
 # ==============================
-# SAVE BEST MODEL PER KOMODITAS
+# SAVE BEST MODEL INFO
 # ==============================
 
-def save_best_model_info(komoditas, model_type, metrics):
-    base_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..")
-    )
+def save_best_model_info(komoditas, target, model_type, metrics):
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     models_dir = os.path.join(base_dir, "models")
     os.makedirs(models_dir, exist_ok=True)
 
     info = {
         "komoditas": komoditas,
+        "target": target,
         "best_model": model_type,
         "metrics": metrics,
         "sliding_window_days": SLIDING_WINDOW_DAYS,
-        "target": TARGET,
+        "alert_threshold_pct": ALERT_THRESHOLD_PCT if target == "target_7d" else None,
         "trained_at": pd.Timestamp.now().isoformat()
     }
 
-    path = os.path.join(models_dir, f"best_model_{komoditas}.json")
+    # Nama file: best_model_beras_1d.json / best_model_beras_7d.json
+    suffix = "1d" if target == "target_1d" else "7d"
+    path = os.path.join(models_dir, f"best_model_{komoditas}_{suffix}.json")
     with open(path, "w") as f:
         json.dump(info, f, indent=2)
-
-    print(f"  Best model info saved: {path}")
+    print(f"  Saved: {path}")
 
 
 # ==============================
@@ -219,10 +188,7 @@ def save_best_model_info(komoditas, model_type, metrics):
 # ==============================
 
 if __name__ == "__main__":
-    # Setup MLflow
-    BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    mlflow.set_tracking_uri(f"sqlite:///{BASE_DIR}/mlflow.db")
-    mlflow.set_experiment("Prediksi Harga Pangan")
+    setup_mlflow()
 
     print("=" * 60)
     print("TRAINING SEMUA MODEL - PREDIKSI HARGA PANGAN JAWA TIMUR")
@@ -233,41 +199,25 @@ if __name__ == "__main__":
         print(f"KOMODITAS: {komoditas.upper()}")
         print(f"{'='*60}")
 
-        X_train, X_test, y_train, y_test = load_data(filename, TARGET)
-        print(f"Train: {len(X_train)} rows | Test: {len(X_test)} rows\n")
+        for target, deskripsi in TARGETS.items():
+            print(f"\n--- {deskripsi} ({target}) ---")
+            mlflow.set_experiment(f"Prediksi Harga Pangan - {target}")
 
-        # Training semua model
-        print("[ Linear Regression ]")
-        lr_model, lr_metrics = train_linear_regression(
-            X_train, X_test, y_train, y_test, komoditas
-        )
+            X_train, X_test, y_train, y_test = load_data(filename, target)
+            print(f"Train: {len(X_train)} rows | Test: {len(X_test)} rows\n")
 
-        print("[ Random Forest ]")
-        rf_model, rf_metrics = train_random_forest(
-            X_train, X_test, y_train, y_test, komoditas
-        )
+            results = train_all_models(X_train, X_test, y_train, y_test, komoditas, target)
 
-        print("[ XGBoost ]")
-        xgb_model, xgb_metrics = train_xgboost(
-            X_train, X_test, y_train, y_test, komoditas
-        )
+            # Pilih best model
+            best_name = min(results, key=lambda x: results[x][1]["mape"])
+            best_metrics = results[best_name][1]
 
-        # Tentukan model terbaik per komoditas
-        all_results = {
-            "LinearRegression": lr_metrics,
-            "RandomForest": rf_metrics,
-            "XGBoost": xgb_metrics,
-        }
-        best_model_name = min(all_results, key=lambda x: all_results[x]["mape"])
-        best_metrics = all_results[best_model_name]
+            print(f"\n  ✅ Best model [{target}]: {best_name}")
+            print(f"     MAPE: {best_metrics['mape_pct']:.2f}% | RMSE: {best_metrics['rmse']}")
 
-        print(f"\nBest model untuk {komoditas}: {best_model_name}")
-        print(f"   MAPE: {best_metrics['mape_pct']:.2f}% | RMSE: {best_metrics['rmse']}")
-
-        save_best_model_info(komoditas, best_model_name, best_metrics)
+            save_best_model_info(komoditas, target, best_name, best_metrics)
 
     print("\n" + "="*60)
     print("TRAINING SELESAI!")
-    print("Buka MLflow UI dengan:")
-    print("mlflow ui --host 0.0.0.0 --port 5000")
+    print("Lihat eksperimen di: https://dagshub.com/cahyamaulani/mlops-prediksi-harga-pangan.mlflow")
     print("="*60)
