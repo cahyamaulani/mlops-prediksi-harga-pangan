@@ -8,11 +8,9 @@ from mlflow.tracking import MlflowClient
 # SETUP MLFLOW → DAGSHUB
 # ==============================
 
-dagshub.init(
-    repo_owner="cahyamaulani",
-    repo_name="mlops-prediksi-harga-pangan",
-    mlflow=True
-)
+os.environ["MLFLOW_TRACKING_USERNAME"] = os.environ["DAGSHUB_USERNAME"]
+os.environ["MLFLOW_TRACKING_PASSWORD"] = os.environ["DAGSHUB_TOKEN"]
+mlflow.set_tracking_uri("https://dagshub.com/cahyamaulani/mlops-prediksi-harga-pangan.mlflow")
 
 KOMODITAS_LIST = ["beras", "telur_ayam", "daging_ayam"]
 TARGETS = {

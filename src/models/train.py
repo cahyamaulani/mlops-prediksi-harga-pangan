@@ -44,11 +44,10 @@ ALERT_THRESHOLD_PCT = 10.0
 # ==============================
 
 def setup_mlflow():
-    dagshub.init(
-        repo_owner="cahyamaulani",
-        repo_name="mlops-prediksi-harga-pangan",
-        mlflow=True
-    )
+    os.environ["MLFLOW_TRACKING_USERNAME"] = os.environ["DAGSHUB_USERNAME"]
+    os.environ["MLFLOW_TRACKING_PASSWORD"] = os.environ["DAGSHUB_TOKEN"]
+    mlflow.set_tracking_uri("https://dagshub.com/cahyamaulani/mlops-prediksi-harga-pangan.mlflow")
+    mlflow.set_experiment("Prediksi Harga Pangan")
 
 
 # ==============================
