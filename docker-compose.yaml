@@ -1,0 +1,62 @@
+version: "3.8"
+
+networks:
+  mlops-network:
+    driver: bridge
+
+volumes:
+  mlflow-data:
+
+services:
+
+  # ============================================================
+  # SERVICE 1: MLflow - Tracking Server (local UI)
+  # ============================================================
+  mlflow-server:
+    image: ghcr.io/mlflow/mlflow:v2.13.0
+    container_name: mlops-mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-data:/mlflow
+    networks:
+      - mlops-network
+    environment:
+      - MLFLOW_ALLOW_LOCALHOST_ONLY=0
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+    restart: unless-stopped
+
+  # ============================================================
+  # SERVICE 2: FastAPI - Inference API
+  # ============================================================
+  api-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mlops-api
+    ports:
+      - "8000:8000"
+    environment:
+      - MLFLOW_TRACKING_URI=https://dagshub.com/cahyamaulani/mlops-prediksi-harga-pangan.mlflow
+      - MLFLOW_TRACKING_USERNAME=${MLFLOW_TRACKING_USERNAME}
+      - MLFLOW_TRACKING_PASSWORD=${MLFLOW_TRACKING_PASSWORD}
+      - DAGSHUB_USERNAME=${DAGSHUB_USERNAME}
+      - DAGSHUB_TOKEN=${DAGSHUB_TOKEN}
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    networks:
+      - mlops-network
+    depends_on:
+      - mlflow-server
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
