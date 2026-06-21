@@ -1,11 +1,9 @@
 name: Continuous Training Pipeline
 
 on:
-  # Skenario C: Schedule setiap Minggu jam 00:00 WIB (17:00 UTC)
   schedule:
-    - cron: "0 17 * * 0"
+    - cron: "0 17 * * 0"  # Setiap Minggu jam 00:00 WIB
 
-  # Manual trigger untuk testing
   workflow_dispatch:
     inputs:
       reason:
@@ -56,10 +54,17 @@ jobs:
 
       - name: Check triggers
         id: check
-        run: |
-          python scripts/check_triggers.py
-          echo "should_retrain=$?" >> $GITHUB_OUTPUT
+        # FIX: pakai continue-on-error karena exit code 1 = "perlu retrain" (bukan error)
+        # Output should_retrain ditulis ke GITHUB_OUTPUT di dalam script Python
+        run: python scripts/check_triggers.py
         continue-on-error: true
+
+      # FIX: kalau script tidak nulis output (misal file tidak ada), default false
+      - name: Set default output jika belum di-set
+        run: |
+          if [ -z "${{ steps.check.outputs.should_retrain }}" ]; then
+            echo "should_retrain=false" >> $GITHUB_OUTPUT
+          fi
 
   # ============================================================
   # JOB 2: RETRAINING (hanya kalau trigger aktif)
@@ -68,7 +73,8 @@ jobs:
     name: "Continuous Training"
     runs-on: ubuntu-latest
     needs: check-triggers
-    if: needs.check-triggers.outputs.should_retrain == '1'
+    # FIX: bandingkan dengan 'true' (string), bukan '1'
+    if: needs.check-triggers.outputs.should_retrain == 'true'
 
     steps:
       - uses: actions/checkout@v4
