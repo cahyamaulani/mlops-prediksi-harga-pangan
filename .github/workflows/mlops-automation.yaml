@@ -5,8 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  schedule:
-    - cron: "0 22 * * *"  # Setiap hari jam 05.00 WIB
+  # schedule:
+    # - cron: "0 22 * * *"  # Setiap hari jam 05.00 WIB
 
 env:
   MLFLOW_TRACKING_URI: https://dagshub.com/cahyamaulani/mlops-prediksi-harga-pangan.mlflow
