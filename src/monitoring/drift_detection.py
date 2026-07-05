@@ -19,7 +19,6 @@ def calculate_psi(expected, actual, bins=10):
     expected = np.array(expected)
     actual = np.array(actual)
 
-    # Buat bin dari data expected
     breakpoints = np.linspace(expected.min(), expected.max(), bins + 1)
     breakpoints[0] = -np.inf
     breakpoints[-1] = np.inf
@@ -27,7 +26,6 @@ def calculate_psi(expected, actual, bins=10):
     expected_counts = np.histogram(expected, bins=breakpoints)[0]
     actual_counts = np.histogram(actual, bins=breakpoints)[0]
 
-    # Hindari division by zero
     expected_pct = expected_counts / len(expected)
     actual_pct = actual_counts / len(actual)
 
@@ -58,18 +56,16 @@ def detect_drift_all(window_days=30):
     """
     Deteksi drift untuk semua komoditas.
     Membandingkan 30 hari terakhir vs 30 hari sebelumnya.
-    
-    Returns:
-        dict: hasil PSI per komoditas
     """
     base_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..")
     )
     processed_dir = os.path.join(base_dir, "data", "processed")
 
+    # FIX: semua nama komoditas pakai underscore (konsisten dengan file lain)
     komoditas_list = {
-        "beras": "harga_beras.csv",
-        "telur ayam": "harga_telur_ayam.csv",
+        "beras":       "harga_beras.csv",
+        "telur_ayam":  "harga_telur_ayam.csv",   # FIX: "telur ayam" → "telur_ayam"
         "daging_ayam": "harga_daging_ayam.csv",
     }
 
@@ -87,7 +83,7 @@ def detect_drift_all(window_days=30):
         df = df.sort_values("tanggal")
 
         if len(df) < window_days * 2:
-            print(f"{nama}: data tidak cukup untuk deteksi drift")
+            print(f"{nama}: data tidak cukup untuk deteksi drift ({len(df)} baris)")
             continue
 
         # Split: reference (lama) vs current (baru)
