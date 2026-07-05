@@ -5,8 +5,15 @@ global:
 scrape_configs:
   - job_name: "mlops-api"
     static_configs:
+      # FIX: nama service harus sesuai dengan nama di docker-compose.yaml
+      # docker-compose dengan replicas: 3 akan membuat container:
+      # mlops-prediksi-harga-pangan-api-service-1, -2, -3
+      # TAPI untuk prometheus lebih baik scrape via service name langsung
       - targets:
-          - "mlops-prediksi-harga-pangan-api-service-1:8000"
-          - "mlops-prediksi-harga-pangan-api-service-2:8000"
-          - "mlops-prediksi-harga-pangan-api-service-3:8000"
+          - "api-service:8000"
     metrics_path: /metrics
+
+  - job_name: "prometheus"
+    static_configs:
+      - targets:
+          - "localhost:9090"

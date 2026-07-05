@@ -27,7 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # FIX: pakai PAT (Personal Access Token) bukan GITHUB_TOKEN
+          # GITHUB_TOKEN default hanya read-only → 403 saat push
+          token: ${{ secrets.PAT_TOKEN }}
 
       - uses: actions/setup-python@v5
         with:
@@ -47,7 +49,7 @@ jobs:
         run: dvc pull --remote dagshub --force
 
       - name: Ingest data terbaru dari BI PIHPS
-        run: python src/data/ingest_data.py incremental   # ← PERBAIKAN: tambah incremental
+        run: python src/data/ingest_data.py incremental
 
       - name: Preprocessing
         run: python src/data/preprocess.py
@@ -58,7 +60,6 @@ jobs:
       - name: Drift Detection
         run: python src/monitoring/drift_detection.py
 
-      # ── Cek apakah drift memerlukan retraining ──────────────
       - name: Cek apakah perlu retraining
         id: cek_drift
         run: |
@@ -83,7 +84,6 @@ jobs:
           python src/registry/register_model.py
           echo "✅ Retraining selesai dan model diregister"
 
-      # ── Simpan data ke DagsHub & GitHub ─────────────────────
       - name: DVC push data baru ke DagsHub
         run: dvc push --remote dagshub
 
@@ -92,7 +92,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/raw/harga_pangan.csv.dvc
-          git add data/processed/drift_report.json || true
+          # FIX: pakai -f untuk force-add file yang ada di .gitignore
+          git add -f data/processed/drift_report.json || true
           git diff --staged --quiet || git commit -m "data: auto-ingest harian $(date +%Y-%m-%d) [skip ci]"
           git push
 
